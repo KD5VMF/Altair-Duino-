@@ -2,7 +2,7 @@
 
 This is the ready-to-flash Windows installer package for **Altair8800 Due Z80 Final REV13**.
 
-Your uploaded firmware binary was renamed to:
+The firmware binary is named:
 
 ```text
 altair8800_REV13.bin
@@ -22,16 +22,27 @@ UploadBinaryDue_REV13_READY_FINAL/
   Install_Altair8800_REV13.bat     double-click installer
   Install_Altair8800_REV13.ps1     real flashing script
   upload.bat                       quick command-line uploader
+  bossac.exe                       BOSSA uploader used to flash the Arduino Due
   altair8800_REV13.bin             REV13 firmware binary
-  SHA256SUMS.txt                   checksum for the firmware
+  SHA256SUMS.txt                   checksum for the firmware binary
   README_BIN_INSTALLER.md          this file
 ```
 
-## Important: bossac.exe
+## About bossac.exe
 
-This package does not include `bossac.exe` because it was not in the uploaded files.
+`bossac.exe` is the BOSSA command-line uploader used by the Arduino Due toolchain.
 
-The installer will automatically search for `bossac.exe` in the normal Arduino locations, including:
+For this portable installer package, place `bossac.exe` directly in this same folder beside `upload.bat` and `altair8800_REV13.bin`.
+
+The installer searches in this order:
+
+1. The local installer folder:
+
+```text
+bossac.exe
+```
+
+2. Normal Arduino install locations, including:
 
 ```text
 %LOCALAPPDATA%\Arduino15\packages\arduino\tools\bossac\
@@ -39,19 +50,29 @@ C:\Program Files (x86)\Arduino\hardware\tools\bossac.exe
 C:\Program Files\Arduino\hardware\tools\bossac.exe
 ```
 
-For a fully portable release exactly like the simple `UploadBinaryDue` style package, copy `bossac.exe` into this same folder beside `upload.bat`.
+So if `bossac.exe` is in this folder, the installer should be portable and should not need to search your Arduino installation.
 
 ## Easiest flashing method
 
 1. Plug the USB cable into the **Arduino Due Programming Port**.
 2. Unzip this folder.
-3. Double-click:
+3. Make sure these files are in the same folder:
+
+```text
+Install_Altair8800_REV13.bat
+Install_Altair8800_REV13.ps1
+upload.bat
+bossac.exe
+altair8800_REV13.bin
+```
+
+4. Double-click:
 
 ```text
 Install_Altair8800_REV13.bat
 ```
 
-4. When asked, enter the Due COM port, for example:
+5. When asked, enter the Arduino Due Programming Port, for example:
 
 ```text
 COM7
@@ -71,17 +92,31 @@ If you are already in the installer folder in **PowerShell**, run it like this:
 .\upload.bat COMX
 ```
 
-Replace `COMX` with the Arduino Due Programming Port, for example:
+Replace `COMX` with the Arduino Due Programming Port.
+
+Example:
 
 ```powershell
 .\upload.bat COM7
 ```
 
-This matters because PowerShell will not run `upload.bat COM7` from the current folder unless the command starts with `.\`.
+This matters because PowerShell will not run `upload.bat COM7` from the current folder unless the command starts with `./` or `.\`.
 
-## Command-line flashing method
+Correct PowerShell form:
 
-From Command Prompt inside this folder:
+```powershell
+.\upload.bat COM7
+```
+
+Incorrect PowerShell form:
+
+```powershell
+upload.bat COM7
+```
+
+## Command Prompt quick command
+
+If you are using normal **Command Prompt** instead of PowerShell, go into the installer folder and run:
 
 ```bat
 upload.bat COMX
@@ -93,7 +128,7 @@ Example:
 upload.bat COM7
 ```
 
-Or explicitly name the binary:
+You can also explicitly name the binary:
 
 ```bat
 upload.bat altair8800_REV13.bin COMX
@@ -105,12 +140,6 @@ Example:
 upload.bat altair8800_REV13.bin COM7
 ```
 
-From PowerShell, include `.\` because PowerShell does not run programs from the current folder by name:
-
-```powershell
-.\upload.bat COMX
-```
-
 ## Finding the COM port
 
 On Windows:
@@ -119,6 +148,18 @@ On Windows:
 2. Expand **Ports (COM & LPT)**.
 3. Find the Arduino Due Programming Port.
 4. Use that COM number in the installer.
+
+Example:
+
+```text
+Arduino Due Programming Port (COM7)
+```
+
+In that example, use:
+
+```powershell
+.\upload.bat COM7
+```
 
 ## After flashing: SD card and CP/M
 
@@ -154,11 +195,23 @@ A>
 
 Try these in order:
 
-1. Confirm the USB cable is in the **Programming Port**, not the Native USB port.
+1. Confirm the USB cable is in the **Arduino Due Programming Port**, not the Native USB port.
 2. Confirm the COM port is correct.
-3. Press reset on the Arduino Due and run the installer again.
-4. Install Arduino IDE and the **Arduino SAM Boards** package so `bossac.exe` is available.
-5. Copy `bossac.exe` directly into this folder and rerun `Install_Altair8800_REV13.bat`.
+3. Confirm `bossac.exe`, `upload.bat`, `Install_Altair8800_REV13.ps1`, and `altair8800_REV13.bin` are all in the same folder.
+4. Press reset on the Arduino Due and run the installer again.
+5. Try the PowerShell command manually:
+
+```powershell
+.\upload.bat COMX
+```
+
+Example:
+
+```powershell
+.\upload.bat COM7
+```
+
+6. If `bossac.exe` still cannot be found, install Arduino IDE and the **Arduino SAM Boards** package, or copy a known-good `bossac.exe` into this folder.
 
 ## If firmware flashes but CP/M does not boot
 
@@ -169,3 +222,13 @@ The firmware and disk images are separate. Recheck:
 - File names match what the simulator expects.
 - Boot disk is mounted in the simulator menu.
 - Serial terminal is connected at 115200 baud.
+
+## Good release name
+
+A good GitHub release asset name for this package is:
+
+```text
+UploadBinaryDue_REV13_READY_FINAL_PORTABLE.zip
+```
+
+That name makes it clear this is the ready-to-flash binary installer package, not the full source tree.
