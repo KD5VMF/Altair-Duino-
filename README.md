@@ -1,258 +1,860 @@
-# Altair 8800 Simulator - Enhanced Arduino Due Build REV11
+# Altair8800 Due Z80 Final REV13
 
-**Revision:** REV11 - Switchable Z80 CPU + REV10 Save/Load and Accurate Clock Fixes  
-**Created:** 2026-05-23  
-**Target board:** Arduino Due / SAM3X8E  
-**Default console:** USB Programming Port / Micro USB  
-**Default baud:** 115200 8N1  
-**Default RAM:** 64 KB  
-**Default CPU target:** 20 MHz  
-**Default throttle:** off / full speed
+Enhanced Arduino Due build of David Hansel's Altair 8800 Simulator with a switchable Intel 8080 / Zilog Z80 CPU core, corrected persistent settings, improved clock-speed control, Z80 opcode-audit fixes, and a cleaned final REV13 package.
 
-This is an enhanced Arduino Due build of the Altair 8800 simulator. REV11 keeps the REV10 save/load and CPU clock governor fixes and enables the switchable Intel 8080 / Zilog Z80 CPU build. REV10 was focused on fixing the power-loss configuration problem seen after REV8, where the menu could return to an old saved 250 kHz / cycle-accurate configuration after a full power cycle.
+This repository is based on the original Altair 8800 Simulator project by David Hansel:
 
-REV10 does three important things:
+- Original project: https://github.com/dhansel/Altair8800
+- Original Hackster project page: https://www.hackster.io/david-hansel/arduino-altair-8800-simulator-3594a6
+- Original support group: https://groups.google.com/forum/#!forum/altair-duino
 
-1. It keeps the compiled defaults maxed out: 20 MHz target, 64 KB RAM, 115200 baud, Micro USB console, throttle off / full speed.
-2. It rejects older saved configuration records from earlier enhanced revisions, so an old slow config #0 cannot keep coming back after power loss.
-3. It now verifies a saved config by reopening it and checking the REV10 header before saying it saved successfully.
-
-After installing REV10, the board should no longer boot back to the old 250 kHz configuration unless you explicitly save a new REV10 config with those settings.
+This REV13 tree is an enhanced fork/drop-in package for the Arduino Due version. The goal is to keep the original Altair behavior available while adding a stronger Arduino Due setup for modern use, CP/M work, Z80 testing, and easier long-term configuration.
 
 ---
 
-## Open in Arduino IDE
+## What this project does
 
-Open this file:
+The Altair 8800 Simulator recreates the experience of using a MITS Altair 8800 on modern microcontroller hardware. It emulates the CPU, memory, front panel behavior, serial devices, disk controllers, hard disk support, printer support, and boot ROM helpers. With the Arduino Due and an SD card, it can boot included disk images such as CP/M and Altair Disk BASIC.
+
+This Final REV13 build keeps that original purpose, but improves the Arduino Due version in these major ways:
+
+- Boots by default into a faster Arduino Due profile.
+- Supports runtime selection between Intel 8080 and Zilog Z80 emulation.
+- Keeps true Intel 8080 mode for original Altair compatibility.
+- Adds a safer cycle-count clock governor for fixed-speed operation.
+- Fixes save/load persistence problems found in earlier enhanced revisions.
+- Fixes SD-backed `STORAGE.DAT` random-write behavior.
+- Audits and fixes important Z80 opcode/disassembler behavior.
+- Provides a clearer startup banner and detailed revision notes.
+- Builds successfully under the included PC/Linux host test target.
+
+---
+
+## Original version vs Final REV13
+
+| Area | Original Altair8800 package | This Final REV13 package |
+|---|---|---|
+| Main target | Arduino Altair 8800 simulator with Arduino Mega, Arduino Due, Teensy, and PC support depending on configuration | Arduino Due focused enhanced build, while keeping the host/Linux test build usable |
+| Default CPU in provided config | Intel 8080 only: `#define USE_Z80 0` | Switchable CPU build: `#define USE_Z80 2`; default reset profile prefers Zilog Z80 |
+| 8080 compatibility | Original Intel 8080 emulation | Preserved; Intel 8080 remains selectable from the configuration menu |
+| Z80 support | Available in source, but not enabled in the provided original config | Enabled and selectable at runtime; useful for Z80 CP/M software and Z80 opcode testing |
+| Default performance style | More original-style Altair behavior with older throttle model | Max-performance default: 20 MHz target label, full-speed throttle off, 64 KB RAM, 115200 baud |
+| Fixed-speed behavior | Older throttle / auto-adjust delay style | Cycle-count clock governor based on emulated instruction cycles and real elapsed microseconds |
+| Clock menu | Basic throttle controls | `k`, `K`, `G`, `Q`, `!`, profiles, serial presets, and benchmark/timing report |
+| Configuration persistence | Older config file version and persistence behavior | Config version bumped to 15; old stale configs rejected; save verifies by reading the saved header back |
+| SD-backed settings | Could fail if `STORAGE.DAT` was short or append-style writes ignored seek positions | `STORAGE.DAT` is extended/preallocated and writable SD files are opened for random read/write |
+| Arduino Due flash fallback | Original external library style | Local `DueFlashStorage.h` fallback included in the package |
+| SD library compatibility | Expected external SdFat/library behavior | Local `SdFat.h` compatibility shim included for this package |
+| Z80 opcode audit | Original Z80 implementation | REV12 audit fixes retained: DDCB/FDCB BIT behavior, ED 70/71, undefined ED handling, ignored DD/FD prefix timing, and disassembler cleanup |
+| Startup banner | Original project banner/status behavior | Clear REV13 banner showing selected CPU, target speed, throttle mode, RAM, and primary I/O |
+| Documentation | Minimal GitHub README plus full original documentation PDF/DOCX | Expanded README plus retained original documentation and revision notes |
+
+---
+
+## Important REV13 defaults
+
+Fresh defaults in this package are:
+
+| Setting | Final REV13 default |
+|---|---|
+| Target board | Arduino Due / SAM3X8E |
+| Sketch to open | `Altair8800.ino` |
+| USB port to use | Arduino Due Programming Port / Micro USB |
+| Terminal speed | 115200 baud, 8 data bits, no parity, 1 stop bit |
+| RAM | 64 KB |
+| CPU mode | Zilog Z80 by default, switchable to Intel 8080 |
+| CPU target label | 20 MHz |
+| Throttle | Off / full speed by default |
+| MITS floppy drives | Enabled: `NUM_DRIVES 4` |
+| Hard disk support | Enabled: `NUM_HDSK_UNITS 1` |
+| Cromemco/Tarbell drives | Disabled by default in this package |
+| Printer support | Enabled |
+
+The default is meant to be fast and convenient. For the most authentic old-software behavior, use the safe/original profile or manually select Intel 8080 mode plus a governed 2 MHz target.
+
+---
+
+## New and changed files in REV13
+
+Important new files added by the enhanced package:
 
 ```text
-Altair8800_REV10_SaveLoad_Settings_Fix\Altair8800.ino
+DueFlashStorage.h
+SdFat.h
+README_FIRST_ARDUINO_DUE.txt
+REV4_UPGRADE_NOTES.txt
+REV5_ACCURATE_CLOCK_NOTES.txt
+REV6_UPDATE_NOTES.txt
+REV10_CHANGELOG_DROPIN.txt
+REV10_SAVE_LOAD_SETTINGS_FIX_NOTES.txt
+REV10_HOTFIX_CPU_CLOCK_GOVERNOR.txt
+REV10_HOTFIX_SAVE_LOAD_SD_RANDOM_WRITE.txt
+REV11_Z80_SWITCHABLE_CPU_NOTES.txt
+REV12_CPU_OPCODE_AUDIT_NOTES.txt
+FINAL_REV13_BUILD_LOG.txt
+FINAL_REV13_STATIC_AUDIT.txt
+FINAL_REV13_STARTUP_SMOKE_TEST_OUTPUT.txt
+FINAL_REV13_VERIFICATION_NOTES.txt
 ```
 
-Board selection:
+Important source files changed from the original package:
 
 ```text
-Tools -> Board -> Arduino Due (Programming Port)
+Altair8800.ino
+config.cpp
+config.h
+cpucore.cpp
+cpucore.h
+cpucore_z80.cpp
+disassembler_z80.cpp
+host_due.cpp
+host_due.h
+host_pc.cpp
+profile.cpp
+profile.h
+timer.cpp
+Makefile
+Arduino/Arduino.cpp
+Arduino/Arduino.h
 ```
 
-Serial monitor / terminal:
+The disk image files from the original package are retained.
+
+---
+
+## Build verification status
+
+The REV13 package includes its own verification logs. I also performed a fresh host/Linux build check of this tree.
+
+Result:
+
+```text
+make clean
+make -j2
+```
+
+The host build completed successfully. The only warning observed was the existing deprecated `ftime()` warning inside the PC Arduino compatibility shim. That warning does not indicate a REV13 logic failure.
+
+The included static audit notes report:
+
+```text
+Intel 8080 root opcode dispatch table: 256 / 256 entries
+Z80 root opcode dispatch table:       256 / 256 entries
+Z80 CB prefix group:                  algorithmic 256-opcode coverage
+Z80 DDCB/FDCB group:                  algorithmic 256-opcode coverage
+Startup banner contains Final REV13:  PASS
+```
+
+---
+
+## Opening the project in the Arduino IDE
+
+Open this sketch:
+
+```text
+Altair8800.ino
+```
+
+Recommended Arduino IDE board selection:
+
+```text
+Tools -> Board -> Arduino SAM Boards -> Arduino Due (Programming Port)
+```
+
+Use the Arduino Due **Programming Port**, not the Native USB port, unless you intentionally changed the project settings.
+
+Serial terminal settings:
 
 ```text
 115200 baud
 8 data bits
-no parity
+No parity
 1 stop bit
+No flow control unless your terminal setup requires otherwise
 ```
 
----
+After upload, open the serial monitor or a terminal program at 115200 8N1.
 
-## REV10 default settings
-
-| Setting | REV10 compiled default |
-|---|---:|
-| CPU clock target | 20 MHz |
-| RAM | 64 KB |
-| Host baud | 115200 8N1 |
-| Host console | USB Programming Port / Micro USB |
-| Throttle | off / full speed |
-| Profiling | off |
-| Serial panel | off |
-| Serial input | off |
-| Serial debug | off |
-
-These are compile-time defaults. REV10 also supports persistent config #0, but old config records from REV9 and older are ignored on purpose.
-
----
-
-## Why REV10 was needed
-
-The board was showing this after power loss:
+A correct REV13 startup should look similar to this:
 
 ```text
-CPU clock target : 250 kHz
-Set throttle mode: cycle-accurate target
+================================================
+ Altair 8800 Simulator - Enhanced Due Build
+ Final REV13 - Stable 8080/Z80 + opcode audit - Created 2026-05-24
+================================================
+Emu CPU    : Zilog Z80
+CPU target : 20.000 MHz
+Throttle   : off / full speed
+RAM        : 64 KB maximum
+Primary I/O: USB Programming Port / Micro USB @ 115200 baud
+Config menu: STOP + AUX1. Turbo toggle: Ctrl+T when serial input is enabled.
+Clocking   : k/K/G clock selections automatically enable governed speed.
 ```
 
-That means the firmware was loading an older saved config #0 instead of using the newer max defaults. Because the Due has no true EEPROM, persistent storage can be complicated:
-
-- If an SD card with `STORAGE.DAT` is available, the project stores settings there.
-- If not, it tries to use the Arduino Due internal flash fallback.
-- Older enhanced packages could leave an old slow config record behind.
-
-REV10 bumps the config record version and refuses to load older records. This makes the firmware fall back to the compiled REV10 max defaults instead of continuing to load the old slow settings.
+On the PC/Linux host build, the primary I/O line may say `Console @ 115200 baud`. That is expected for the host simulator target.
 
 ---
 
-## First boot after uploading REV10
+## Entering the configuration menu
 
-After upload, enter the config menu:
+Use the Altair front panel controls:
 
 ```text
-STOP + AUX1
+Hold STOP and raise AUX1
 ```
 
-You should see something close to:
+The configuration menu is where most REV13 improvements are controlled.
 
-```text
-CPU clock target (k/K,G)    : 20.000 MHz
-Set throttle mode (t/T)     : off / full speed
-Configure memory            : 64 KB RAM
-Configure host serial       : Primary: USB Programming Port
-```
-
-If you see 20 MHz and full speed, REV10 is doing what it should.
-
----
-
-## Save your current settings as the power-on default
-
-Use config #0. Config #0 is the power-on default.
-
-```text
-STOP + AUX1
-!      apply max performance profile
-S      save configuration
-0      save as config #0
-y      overwrite if asked
-x      exit
-```
-
-Important: REV10 will ignore old configs from REV9 and below. A newly saved REV10 config #0 should load normally if the selected storage backend is actually writing correctly.
-
----
-
-## If it still will not save custom settings
-
-If REV10 always boots max defaults but does not remember custom changes after power loss, then the Arduino Due internal flash fallback is not writing reliably in your exact board/core setup.
-
-Best reliable fix:
-
-1. Use a working SD card on the Altair simulator SD interface.
-2. Let the firmware create/use `STORAGE.DAT` on the SD card.
-3. Save your settings as config #0.
-
-With no SD card and no external EEPROM/FRAM, the Arduino Due has to use internal flash emulation. That is more fragile than a real EEPROM device. REV10 prevents the old bad/slow config from returning, but a true reliable save still requires a working nonvolatile backend.
-
----
-
-## Speed controls
+Important main-menu keys:
 
 | Key | Action |
 |---|---|
-| `k` | Next faster preset |
-| `K` | Next slower preset |
-| `G` | Enter a custom CPU target clock |
-| `t/T` | Change throttle mode |
-| `Q` | Accurate cycle-governed target mode |
-| `!` | Max-performance profile |
-| `A` | Profile menu |
-| `N` | Serial preset menu |
-| `B` | Benchmark/timing report |
+| `c` | Toggle emulated CPU between Intel 8080 and Zilog Z80 |
+| `k` | Move to the next faster CPU target preset and enable governed speed |
+| `K` | Move to the next slower CPU target preset and enable governed speed |
+| `G` | Enter a custom CPU target in kHz and enable governed speed |
+| `Q` | Enable the cycle-accurate clock governor for the current target |
+| `!` | Apply maximum-performance/full-speed profile |
+| `A` | Open quick boot profiles |
+| `N` | Open serial presets |
+| `B` | Run benchmark/timing report |
+| `D` | Configure MITS disk drives |
+| `H` | Configure hard disks |
+| `E` | Configure serial cards |
+| `P` | Configure printer |
+| `m` | Configure memory |
+| `s` | Configure host serial settings |
+| `I` | Configure interrupts |
+| `F` | SD card file manager, when available |
+| `S` | Save configuration |
+| `L` | Load configuration |
+| `R` | Reset to compiled defaults |
+| `x` | Exit menu |
 
 ---
 
-## Fast mode vs accurate mode
+## Saving your power-on default settings
 
-### Full speed mode
+Configuration `0` is the power-on default. Save your preferred settings there.
+
+Recommended fast REV13 default save:
 
 ```text
-Throttle: off / full speed
+STOP + AUX1      enter configuration menu
+!                apply max-performance profile
+c                optional: toggle CPU if you want Intel 8080 instead of Z80
+S                save configuration
+0                save as config #0
+y                overwrite if asked
+x                exit
 ```
 
-This lets the Arduino Due run the emulator as fast as it can.
-
-### Accurate clock mode
+If you want the machine to power up in Z80 mode, make sure the processor line says:
 
 ```text
-Q = cycle-accurate target
+Pro(c)essor : Zilog Z80
 ```
 
-This uses the emulator's cycle counter and the Arduino `micros()` timer to hold the selected target as closely as possible. Use this when you want a realistic Altair-style clock.
-
----
-
-## Safe realistic Altair profile
-
-The safe profile keeps old software closer to the real machine:
+If you want the machine to behave more like a standard Altair 8080 system, set it to:
 
 ```text
-CPU target : 2 MHz
-RAM        : 64 KB
-Clocking   : cycle-governed
-Baud       : 9600 8N1
-Console    : Micro USB
+Pro(c)essor : Intel 8080
 ```
 
-Use this if old BASIC, CP/M, serial, or disk activity is timing-sensitive.
+Then save config `0`.
 
 ---
 
-## REV10 source-level changes
+## CPU modes: when to use 8080 vs Z80
 
-REV10 changes include:
+Use **Intel 8080 mode** when:
 
-- Updated revision banner to REV10 with the 2026-05-23 creation date.
-- Bumped configuration file version to 15.
-- Added strict rejection of old config records below version 15.
-- Prevents old 250 kHz / cycle-accurate records from REV9 and earlier from loading at power-on.
-- Keeps max-performance compiled defaults: 20 MHz, 64 KB RAM, 115200, Micro USB, throttle off.
-- Keeps accurate cycle governor from REV5/REV6/REV8.
-- Adds save read-back verification so the menu does not falsely claim success when a config cannot be reopened.
-- Pre-allocates/extends SD `STORAGE.DAT` to the expected storage size before using it.
-- Keeps local SD compatibility wrapper and the safe `rename()` copy/delete fallback.
-- Keeps local Due flash compatibility fallback, but documents that SD `STORAGE.DAT` is the preferred reliable persistence method.
+- You want the most authentic original Altair behavior.
+- You are testing original Altair software.
+- A program behaves strangely and you want the safest compatibility mode.
+- You are comparing behavior against real 8080-only hardware.
 
----
+Use **Zilog Z80 mode** when:
 
-## Known limitation
+- You want to run Z80-specific test programs.
+- You want to run software that uses Z80 opcodes.
+- You are working with CP/M programs that expect or benefit from Z80 instructions.
+- You want to test the REV12 opcode-audit fixes.
 
-The Arduino Due does not have real EEPROM. If there is no SD-backed `STORAGE.DAT`, the firmware must emulate saved settings using internal flash. Internal flash save behavior can depend on sketch size, flash layout, Arduino SAM core behavior, and board/bootloader details. REV10 avoids loading the old broken slow config and makes the default behavior correct even if the flash fallback is unreliable.
+Normal 8080 CP/M software should usually run in Z80 mode too because the Z80 is backward compatible with the 8080 instruction set, but Intel 8080 mode remains the best fallback for original Altair compatibility.
 
 ---
 
-## License and original project
+## Clock and speed behavior
 
-This project is based on the Altair 8800 Simulator originally by David Hansel and is distributed under the GPL license included in this repository. REV10 adds Arduino Due usability, clocking, default-profile, and configuration-persistence improvements.
+REV13 has two main speed styles.
 
+### Full-speed mode
 
-## REV10 Hotfix - Save/Load Settings SD Random Write Fix
+Full-speed mode lets the Arduino Due run the emulator as fast as it can.
 
-This REV10 package includes a hotfix for Arduino Due builds using the included local `SdFat.h` compatibility shim.  The stock Arduino SD `FILE_WRITE` mode can behave like append mode, but `STORAGE.DAT` must be used as a random-access persistent block device.  Writable SD files are now opened without append mode using `O_READ | O_WRITE | O_CREAT`, so config SAVE writes land at the exact mini-filesystem offsets and immediate LOAD/verification can work correctly.
+In the menu this appears as:
 
-After uploading, test from the config menu with `S`, config `0`, overwrite `y`, then `L`, config `0`.  If a bad `STORAGE.DAT` was produced by the earlier REV10 attempt, delete/rename `STORAGE.DAT` from the SD card, reboot, and save config `0` again.
+```text
+Throttle : off / full speed
+```
 
+Use this when you want maximum performance.
 
-## REV10 Hotfix - CPU Clock Target Governor Fix
+To force this mode:
 
-This package also fixes the clock-selection behavior. In the earlier REV10 hotfix, `k`, `K`, and `G` changed and saved the displayed CPU clock target, but the emulator could still run at raw/full Arduino Due speed if throttle mode was OFF. Now selecting a CPU clock target automatically enables the cycle-count governor, so RUN obeys the selected target speed.
+```text
+STOP + AUX1
+!
+S
+0
+y
+x
+```
 
-Use `!` for intentional max-performance/full-speed mode. Use `Q` or any `k`/`K`/`G` clock selection for governed target-speed mode. Save config `0` afterward if you want that speed to be the power-on default.
+### Governed target-speed mode
 
+Governed mode attempts to make the emulated CPU obey the selected target speed by comparing emulated instruction cycles to real elapsed time.
 
-## REV11 Z80 CPU upgrade
+Use one of these keys:
 
-REV11 changes `config.h` to:
+```text
+k   next faster clock preset
+K   next slower clock preset
+G   custom target in kHz
+Q   enable accurate clock for current target
+```
+
+In REV13, choosing a target speed with `k`, `K`, or `G` automatically enables the governor. This fixes the earlier problem where the menu could show a selected target but the emulator still ran at raw full speed.
+
+### Good realistic Altair setting
+
+For old software that expects a closer original machine speed:
+
+```text
+CPU       : Intel 8080
+Target    : 2 MHz
+Throttle  : cycle-accurate target
+RAM       : 64 KB
+Terminal  : 9600 or 115200 depending on your setup
+```
+
+The quick profile menu can apply a safe/original profile for this.
+
+---
+
+## Preparing the SD card for disks and CP/M
+
+Disk support uses an SD card connected to the Arduino Due SPI header. The original documentation has the full wiring details. This package keeps the original disk images in the `disks` folder.
+
+For the Arduino Due SD card, copy the **contents** of the `disks` folder to the **root** of the SD card.
+
+Example SD card root after copying:
+
+```text
+DISK01.DSK
+DISK02.DSK
+DISK03.DSK
+DISK04.DSK
+...
+DISK16.DSK
+DISKDIR.TXT
+HDSK01.DSK
+HDSK02.DSK
+HDSK03.DSK
+HDSKDIR.TXT
+README.TXT
+```
+
+Do not only copy the `disks` folder itself unless you also changed the firmware to look inside that folder. The simulator expects the disk image files at the SD card root.
+
+Important included MITS disk images:
+
+| Image | Description |
+|---|---|
+| `DISK01.DSK` | CP/M 63K |
+| `DISK02.DSK` | Altair DOS 1.0 |
+| `DISK03.DSK` | Altair Disk BASIC |
+| `DISK05.DSK` | CP/M games |
+| `DISK06.DSK` | SuperCalc II |
+| `DISK07.DSK` | WordStar |
+| `DISK08.DSK` | Zork |
+| `DISK10.DSK` | Dazzler programs, boots CP/M |
+| `DISK11.DSK` | VDM-1 programs, boots CP/M |
+| `DISK13.DSK` | CP/M 3.0 disk 1, boot |
+| `DISK14.DSK` | CP/M 3.0 disk 2, utilities |
+| `DISK16.DSK` | CP/M 2.2 MITS + Tarbell |
+
+Important included hard disk images:
+
+| Image | Description |
+|---|---|
+| `HDSK01.DSK` | Altair hard disk BASIC |
+| `HDSK02.DSK` | Altair Accounting System |
+| `HDSK03.DSK` | 88-HDSK CP/M |
+
+---
+
+## Loading a disk and starting CP/M: easy menu method
+
+This is the easiest way to boot the included CP/M floppy image.
+
+### 1. Prepare the SD card
+
+Copy the contents of `disks` to the SD card root, then insert the SD card into the simulator SD interface.
+
+Make sure these files are present at minimum:
+
+```text
+DISK01.DSK
+DISKDIR.TXT
+```
+
+### 2. Boot the simulator
+
+Upload/run the REV13 sketch and open your terminal at 115200 8N1.
+
+### 3. Enter the configuration menu
+
+```text
+STOP + AUX1
+```
+
+### 4. Mount the CP/M disk in MITS drive 0
+
+From the configuration menu:
+
+```text
+D
+```
+
+This opens the MITS disk drive menu.
+
+Press:
+
+```text
+0
+```
+
+Each press cycles drive 0 through the available `DISKxx.DSK` images. Stop when drive 0 shows:
+
+```text
+DISK01.DSK: CP/M (63k)
+```
+
+Then press:
+
+```text
+x
+```
+
+This returns to the main configuration menu and applies the mounted disk choice.
+
+### 5. Select the Disk Boot ROM as the AUX1 shortcut
+
+On the main configuration menu, use:
+
+```text
+u
+```
+
+or:
+
+```text
+U
+```
+
+Cycle the Aux1 shortcut program until it shows:
+
+```text
+Disk boot ROM
+```
+
+Then save if you want this to remain your normal boot setup:
+
+```text
+S
+0
+y
+```
+
+Exit the menu:
+
+```text
+x
+```
+
+### 6. Start CP/M
+
+Raise the AUX1 shortcut switch to run the Disk Boot ROM. The Disk Boot ROM loads at `0xFF00` and boots the mounted disk.
+
+If the disk boots correctly, you should arrive at a CP/M prompt:
+
+```text
+A>
+```
+
+Try:
+
+```text
+DIR
+```
+
+That should list files on the CP/M disk.
+
+---
+
+## Loading a disk and starting CP/M: front panel method
+
+This is closer to the original documented Altair-style process.
+
+### Mount `DISK01.DSK` in drive 0
+
+Set the switches for MITS disk mounting:
+
+```text
+SW15..SW0 = 0001 0000 0000 0001
+```
+
+Meaning:
+
+```text
+0001       MITS disk mount command
+0000       drive 0
+00000001   disk image 01, so DISK01.DSK
+```
+
+Press:
+
+```text
+AUX2 down
+```
+
+This mounts `DISK01.DSK` in drive 0.
+
+### Start the Disk Boot ROM
+
+Set the low program-select switches to the Disk Boot ROM program number:
+
+```text
+00001000
+```
+
+Then press:
+
+```text
+AUX1 down
+```
+
+The simulator installs the Disk Boot ROM at `0xFF00` and starts it. If `DISK01.DSK` is mounted correctly, CP/M should boot and display:
+
+```text
+A>
+```
+
+At the CP/M prompt, try:
+
+```text
+DIR
+```
+
+---
+
+## Loading more disks for CP/M
+
+CP/M can use more than one mounted drive if you mount additional disk images.
+
+Example using the menu:
+
+1. Enter the configuration menu with `STOP + AUX1`.
+2. Press `D` for MITS disk drives.
+3. Press `0` until drive 0 shows `DISK01.DSK` for the boot disk.
+4. Press `1` until drive 1 shows another disk, such as `DISK05.DSK` for games.
+5. Press `x` to return.
+6. Boot CP/M from drive 0.
+
+Inside CP/M:
+
+```text
+A>DIR
+A>B:
+B>DIR
+```
+
+The exact CP/M drive letters depend on the mounted controller/drive mapping, but the normal pattern is drive 0 as `A:`, drive 1 as `B:`, and so on.
+
+---
+
+## Booting hard disk CP/M
+
+The included hard disk CP/M image is:
+
+```text
+HDSK03.DSK
+```
+
+Easy menu method:
+
+1. Copy `HDSK03.DSK` and `HDSKDIR.TXT` to the SD card root.
+2. Enter the configuration menu with `STOP + AUX1`.
+3. Press `H` to configure hard disks.
+4. Mount `HDSK03.DSK` on unit 0, platter 0.
+5. Return with `x`.
+6. Select or run the Hard Disk Boot ROM.
+
+Front panel boot ROM selection for hard disk boot:
+
+```text
+00001110
+```
+
+Then press:
+
+```text
+AUX1 down
+```
+
+The hard disk boot ROM loads at `0xFC00` and boots from unit 0, platter 0.
+
+---
+
+## SD card file manager
+
+When the SD card is detected, the configuration menu shows:
+
+```text
+(F)ile manager for SD card
+```
+
+Use this for SD card management and file transfer features. The original simulator also supports XMODEM transfer through the file manager.
+
+This can help you inspect whether the expected disk files are actually visible to the simulator.
+
+---
+
+## Save/load behavior in REV13
+
+REV13 keeps the REV10 persistence fixes.
+
+Important points:
+
+- Config `0` is the automatic power-on default.
+- Save now verifies by reopening the saved config and checking the current config header.
+- Old stale config records from earlier enhanced builds are rejected.
+- SD-backed `STORAGE.DAT` is preferred for reliable persistence.
+- Arduino Due has no true EEPROM, so SD-backed storage is more reliable than relying on flash fallback.
+
+Recommended persistence setup:
+
+```text
+Use a working SD card.
+Let the simulator create/use STORAGE.DAT.
+Save your desired settings as config #0.
+Power cycle and confirm the same settings return.
+```
+
+If save/load fails:
+
+1. Confirm the SD card is detected.
+2. Confirm `STORAGE.DAT` can be created at the SD card root.
+3. Use the SD file manager to inspect files if needed.
+4. Delete/recreate a bad `STORAGE.DAT` if it was created by an older broken build.
+5. Save config `0` again.
+
+---
+
+## Recommended first setup
+
+For a strong normal REV13 setup:
+
+```text
+1. Upload Altair8800.ino to Arduino Due Programming Port.
+2. Open terminal at 115200 8N1.
+3. Enter menu with STOP + AUX1.
+4. Press ! for max performance.
+5. Press c only if you want Intel 8080 instead of default Z80.
+6. Press D and mount DISK01.DSK in drive 0 if you want CP/M ready.
+7. Set Aux1 shortcut to Disk boot ROM if desired.
+8. Save as config #0.
+9. Exit and boot CP/M.
+```
+
+For original Altair-style compatibility:
+
+```text
+1. Enter menu with STOP + AUX1.
+2. Set CPU to Intel 8080.
+3. Choose the safe/original 2 MHz governed profile from A, or set 2 MHz using k/K and Q.
+4. Use a conservative serial speed if old software loses characters.
+5. Save as config #0.
+```
+
+---
+
+## Terminal tips
+
+Use a terminal program that supports:
+
+- 115200 baud, 8N1.
+- ANSI escape sequences if you want cleaner screen/control behavior.
+- Optional transmit delay when pasting long BASIC or CP/M text.
+
+For old software that loses pasted characters, add a small character delay and line delay in your terminal program. This is especially useful when sending long text listings or commands to emulated serial software.
+
+---
+
+## Troubleshooting
+
+### I do not see the REV13 banner
+
+Make sure you uploaded this package's `Altair8800.ino`, not the original sketch or an older revision.
+
+Expected banner line:
+
+```text
+Final REV13 - Stable 8080/Z80 + opcode audit - Created 2026-05-24
+```
+
+### My selected clock speed does not seem to apply
+
+Use `k`, `K`, `G`, or `Q` in the configuration menu. REV13 should show:
+
+```text
+Throttle : cycle-accurate target
+```
+
+Use `!` only when you intentionally want full speed.
+
+### Save says failed
+
+REV13 only reports save success after read-back verification. If save fails, the storage backend did not write correctly.
+
+Best fix:
+
+```text
+Use a working SD card and let the simulator create/use STORAGE.DAT.
+```
+
+### CP/M does not boot
+
+Check these items:
+
+1. `DISK01.DSK` is copied to the SD card root.
+2. The SD card is detected by the simulator.
+3. Drive 0 is actually mounted to `DISK01.DSK`.
+4. You started the Disk Boot ROM, not BASIC.
+5. Try Intel 8080 mode if a program behaves strangely.
+6. Try the 2 MHz governed profile if timing-sensitive software acts wrong.
+
+### I mounted the disk but still get no `A>` prompt
+
+Try the menu method first because it confirms the mounted image name on screen.
+
+Expected drive 0 menu line:
+
+```text
+Drive (0) mounted disk image : DISK01.DSK: CP/M (63k)
+```
+
+Then boot with the Disk Boot ROM.
+
+### CP/M boots but typed/pasted input is unreliable
+
+Use a terminal program with transmit delay, or use a slower serial preset from the `N` serial preset menu.
+
+---
+
+## Revision history summary
+
+### REV4
+
+- Added a cleaner startup banner.
+- Added easier emulated CPU clock target controls.
+- Added full-speed/turbo support.
+- Added quick boot profiles.
+- Added serial presets.
+- Added benchmark/timing reporting.
+- Added Arduino Due compile compatibility shims.
+
+### REV5
+
+- Added cycle-count based clock governor.
+- Kept max-performance defaults.
+- Switched default serial behavior toward 115200 baud.
+- Added `Q` accurate clock mode.
+
+### REV6
+
+- Set requested default profile:
+  - 20 MHz target.
+  - 64 KB RAM.
+  - 115200 baud.
+  - USB Programming Port / Micro USB primary.
+  - Full-speed throttle off.
+
+### REV10
+
+- Fixed save/load settings behavior.
+- Bumped config record version to 15.
+- Rejected stale older configs.
+- Added read-back verification after saving.
+- Fixed short `STORAGE.DAT` problems.
+- Fixed SD random-write behavior so writes land at the requested offset instead of appending.
+- Fixed clock target changes so they actually enable governed speed.
+
+### REV11
+
+- Enabled switchable CPU support with:
 
 ```cpp
 #define USE_Z80 2
 ```
 
-That compiles both CPU cores and enables the configuration-menu processor selector:
+- Added menu CPU selection:
 
 ```text
 Pro(c)essor : Intel 8080 / Zilog Z80
 ```
 
-Use `c` in the configuration menu to toggle between Intel 8080 and Zilog Z80.
-Save as config `0` to make the selected CPU the power-on default.
+- Startup banner reports selected CPU.
+- Reset defaults prefer Z80 while keeping Intel 8080 selectable.
 
-The compiled reset-default profile now prefers Z80 when Z80 support is compiled in.
-However, if the board already has a saved REV10 config #0, that saved config may
-still select Intel 8080 until you toggle to Z80 and save config #0 again.
+### REV12
 
-Intel 8080 mode is intentionally preserved because some original Altair software
-is safest in true 8080 mode. Z80 mode is the better choice for Z80-aware CP/M
-software and Z80-specific instructions.
+- Audited CPU opcode dispatch paths.
+- Confirmed 256/256 root opcode table coverage for Intel 8080 and Z80.
+- Fixed DDCB/FDCB indexed BIT behavior.
+- Added ED 70 and ED 71 real-Z80 undocumented I/O behavior.
+- Corrected undefined ED-prefix behavior.
+- Improved ignored DD/FD prefix timing.
+- Cleaned Z80 disassembler formatting and certain opcode names.
 
-REV11 also tightens the Z80 refresh/R-register handling so the Z80-only refresh
-register is advanced only while the selected emulated CPU is actually Z80.
+### Final REV13
+
+- Cleaned final package naming.
+- Fixed stale banner text so the live startup banner reports Final REV13.
+- Preserved REV10, REV11, and REV12 fixes.
+- Included build, static audit, startup smoke test, and verification notes.
+
+---
+
+## License
+
+This project is based on David Hansel's Altair 8800 Simulator and remains under the GNU General Public License included in this repository.
+
+Keep the original license file with the source tree.
+
+---
+
+## Credits
+
+Original Altair 8800 Simulator:
+
+```text
+David Hansel
+https://github.com/dhansel/Altair8800
+```
+
+Original disk and hard disk images are credited in `disks/README.TXT`, including work by Mike Douglas and Udo Munk. Keep those notes with the disk images.
+
+This enhanced REV13 package is a modified Arduino Due-focused build intended to make the simulator easier to configure, faster by default, more reliable for saved settings, and more useful for Z80/CP/M experiments while retaining original Intel 8080 compatibility.
