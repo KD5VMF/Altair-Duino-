@@ -1,4 +1,4 @@
-# Altair8800 Due Z80 Final REV14 TURBO
+# Altair8800 Due Z80 REV14 TURBO
 
 GitHub-ready REV14 package for the Arduino Due Altair 8800 simulator build.
 
